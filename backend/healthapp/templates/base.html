@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login | AI Health Chatbot</title>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      background: linear-gradient(to right, #e0f7fa, #80deea);
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 100vh;
+      overflow: hidden;
+    }
+
+    .loader {
+      display: none;
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+    }
+
+    .ecg-loader {
+      width: 150px;
+      height: 50px;
+      border-left: 2px solid transparent;
+      border-right: 2px solid transparent;
+      background:
+        linear-gradient(to right, transparent 10%, #00796b 10% 15%, transparent 15% 20%, #00796b 20% 25%, transparent 25% 30%,
+                        #00796b 30% 35%, transparent 35% 100%);
+      background-size: 200% 100%;
+      animation: heartbeat 1.5s infinite linear;
+    }
+
+    @keyframes heartbeat {
+      0%   { background-position: 100% 0; }
+      100% { background-position: 0 0; }
+    }
+
+    .login-container {
+      position: relative;
+      background: #fff;
+      border-radius: 12px;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.2);
+      padding: 40px;
+      width: 400px;
+      z-index: 1;
+    }
+
+    h2 {
+      text-align: center;
+      color: #00796b;
+      margin-bottom: 20px;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    input[type=email], input[type=password] {
+      width: 100%;
+      padding: 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      outline: none;
+    }
+
+    button {
+      width: 100%;
+      padding: 12px;
+      background: #00796b;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: background 0.3s ease;
+    }
+
+    button:hover {
+      background: #004d40;
+    }
+
+    .medical-icons {
+      position: absolute;
+      top: -20px;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-around;
+      font-size: 28px;
+      color: #004d40;
+    }
+  </style>
+</head>
+<body>
+  <div class="loader" id="loader">
+    <div class="ecg-loader"></div>
+  </div>
+
+  <div class="login-container" id="loginBox">
+    <div class="medical-icons">
+      <i class="fas fa-stethoscope"></i>
+      <i class="fas fa-user-md"></i>
+      <i class="fas fa-heartbeat"></i>
+      <i class="fas fa-notes-medical"></i>
+    </div>
+    <h2>Login</h2>
+    <form onsubmit="showLoader(event)">
+      <div class="form-group">
+        <input type="email" placeholder="Email" required>
+      </div>
+      <div class="form-group">
+        <input type="password" placeholder="Password" required>
+      </div>
+      <button type="submit">Login</button>
+    </form>
+  </div>
+
+  <script>
+    function showLoader(e) {
+      e.preventDefault();
+      document.getElementById('loginBox').style.display = 'none';
+      document.getElementById('loader').style.display = 'block';
+
+      // Simulate loading
+      setTimeout(() => {
+        window.location.href = "/dashboard"; // change this to your next route
+      }, 2500);
+    }
+  </script>
+</body>
+</html>
