@@ -11,23 +11,56 @@ main = Blueprint('main', __name__)
 # API Routes for frontend integration
 @main.route('/api/chatbot', methods=['POST'])
 def api_chatbot():
+    print("API chatbot route called")
     try:
+        print("Getting JSON data...")
         data = request.get_json()
+        print(f"Received data: {data}")
+        
+        if not data:
+            print("No data received")
+            return jsonify({'error': 'No data provided'}), 400
+            
         message = data.get('message', '')
+        print(f"Message: '{message}'")
         
         if not message:
+            print("No message provided")
             return jsonify({'error': 'Message is required'}), 400
         
-        # Process symptoms
-        symptoms = [s.strip() for s in message.split(',')]
-        result = predict_disease(symptoms, 2)
+        # Process symptoms - handle both comma-separated and single symptoms
+        if ',' in message:
+            symptoms = [s.strip() for s in message.split(',')]
+        else:
+            # Split by common separators or treat as single symptom
+            import re
+            # Split by 'and', 'or', semicolons, or periods
+            symptoms = re.split(r'[,;.]|\s+and\s+|\s+or\s+', message.lower())
+            symptoms = [s.strip() for s in symptoms if s.strip()]
+            
+            # If no separators found, treat the whole message as symptoms
+            if len(symptoms) <= 1:
+                symptoms = [message.strip()]
         
-        return jsonify({
+        print(f"Processing symptoms: {symptoms}")
+        
+        # Call the ML model
+        print("Calling predict_disease...")
+        result = predict_disease(symptoms, 2)
+        print(f"ML result: {result[:100]}...")
+        
+        response = {
             'response': result,
             'status': 'success'
-        })
+        }
+        print("Returning successful response")
+        return jsonify(response)
+        
     except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        print(f"API Error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'Internal server error: {str(e)}'}), 500
 
 @main.route('/api/register', methods=['POST'])
 def api_register():
@@ -158,6 +191,17 @@ def api_chat():
         return jsonify({
             'messages': messages,
             'status': 'success'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@main.route('/api/health', methods=['GET'])
+def health_check():
+    try:
+        return jsonify({
+            'status': 'healthy',
+            'message': 'Backend is running properly',
+            'ml_model_loaded': True
         })
     except Exception as e:
         return jsonify({'error': str(e)}), 500

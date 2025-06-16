@@ -9,187 +9,363 @@ from sklearn.model_selection import train_test_split
 # Define absolute paths to data
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-try:
-    training = pd.read_csv(os.path.join(BASE_DIR, 'Data', 'Training.csv'))
-    testing = pd.read_csv(os.path.join(BASE_DIR, 'Data', 'Testing.csv'))
-    cols = training.columns[:-1]
-    x = training[cols]
-    y = training['prognosis']
+# Global variables
+MODEL_LOADED = False
+clf = None
+le = None
+cols = None
+reduced_data = None
+severity_dict = {}
+description_dict = {}
+precaution_dict = {}
 
-    # Label encoding
-    le = preprocessing.LabelEncoder()
-    y_encoded = le.fit_transform(y)
+# Common symptom mappings to dataset columns
+SYMPTOM_MAPPINGS = {
+    'fever': ['high_fever', 'mild_fever'],
+    'headache': ['headache'],
+    'cough': ['cough'],
+    'fatigue': ['fatigue'],
+    'tired': ['fatigue'],
+    'nausea': ['nausea'],
+    'vomiting': ['vomiting'],
+    'stomach pain': ['stomach_pain', 'abdominal_pain'],
+    'belly pain': ['belly_pain', 'abdominal_pain', 'stomach_pain'],
+    'chest pain': ['chest_pain'],
+    'back pain': ['back_pain'],
+    'joint pain': ['joint_pain'],
+    'muscle pain': ['muscle_pain'],
+    'neck pain': ['neck_pain'],
+    'diarrhea': ['diarrhoea'],
+    'diarrhoea': ['diarrhoea'],
+    'constipation': ['constipation'],
+    'itching': ['itching'],
+    'skin rash': ['skin_rash'],
+    'rash': ['skin_rash'],
+    'breathing': ['breathlessness'],
+    'shortness of breath': ['breathlessness'],
+    'sweating': ['sweating'],
+    'chills': ['chills'],
+    'shivering': ['shivering'],
+    'dizziness': ['dizziness'],
+    'weakness': ['weakness_in_limbs', 'muscle_weakness'],
+    'loss of appetite': ['loss_of_appetite'],
+    'weight loss': ['weight_loss'],
+    'weight gain': ['weight_gain'],
+    'anxiety': ['anxiety'],
+    'depression': ['depression'],
+    'mood swings': ['mood_swings'],
+    'runny nose': ['runny_nose'],
+    'sore throat': ['throat_irritation'],
+    'throat pain': ['throat_irritation'],
+    'sinus': ['sinus_pressure'],
+    'congestion': ['congestion'],
+    'sneezing': ['continuous_sneezing'],
+    'bloody stool': ['bloody_stool'],
+    'dark urine': ['dark_urine'],
+    'yellow urine': ['yellow_urine'],
+    'knee pain': ['knee_pain'],
+    'hip pain': ['hip_joint_pain'],
+    'stiff neck': ['stiff_neck'],
+    'blurred vision': ['blurred_and_distorted_vision'],
+    'red eyes': ['redness_of_eyes'],
+    'swollen legs': ['swollen_legs'],
+    'fast heart rate': ['fast_heart_rate'],
+    'palpitations': ['palpitations'],
+    'indigestion': ['indigestion'],
+    'acidity': ['acidity'],
+    'dehydration': ['dehydration'],
+    'lethargy': ['lethargy'],
+    'restlessness': ['restlessness'],
+    'burning urination': ['burning_micturition'],
+    'frequent urination': ['spotting_ urination'],
+    'cold hands': ['cold_hands_and_feets'],
+    'cold feet': ['cold_hands_and_feets'],
+    'yellowish skin': ['yellowish_skin'],
+    'yellow skin': ['yellowish_skin'],
+    'muscle wasting': ['muscle_wasting'],
+    'patches throat': ['patches_in_throat'],
+    'sunken eyes': ['sunken_eyes'],
+    'pain behind eyes': ['pain_behind_the_eyes'],
+    'swelling stomach': ['swelling_of_stomach'],
+    'swollen lymph nodes': ['swelled_lymph_nodes'],
+    'phlegm': ['phlegm'],
+    'bruising': ['bruising'],
+    'obesity': ['obesity'],
+    'puffy face': ['puffy_face_and_eyes'],
+    'enlarged thyroid': ['enlarged_thyroid'],
+    'brittle nails': ['brittle_nails'],
+    'excessive hunger': ['excessive_hunger'],
+    'slurred speech': ['slurred_speech'],
+    'stiff joints': ['movement_stiffness'],
+    'spinning': ['spinning_movements'],
+    'loss of balance': ['loss_of_balance'],
+    'loss of smell': ['loss_of_smell'],
+    'bladder discomfort': ['bladder_discomfort'],
+    'foul urine smell': ['foul_smell_of urine'],
+    'gases': ['passage_of_gases'],
+    'internal itching': ['internal_itching'],
+    'red spots': ['red_spots_over_body'],
+    'abnormal menstruation': ['abnormal_menstruation'],
+    'watering eyes': ['watering_from_eyes'],
+    'increased appetite': ['increased_appetite'],
+    'polyuria': ['polyuria'],
+    'bloody sputum': ['blood_in_sputum'],
+    'prominent veins': ['prominent_veins_on_calf'],
+    'painful walking': ['painful_walking'],
+    'pimples': ['pus_filled_pimples'],
+    'blackheads': ['blackheads'],
+    'skin peeling': ['skin_peeling'],
+    'small nail dents': ['small_dents_in_nails'],
+    'inflammatory nails': ['inflammatory_nails'],
+    'blister': ['blister'],
+    'red sore nose': ['red_sore_around_nose'],
+    'yellow crust': ['yellow_crust_ooze']
+}
 
-    # Train/test split
-    x_train, x_test, y_train, y_test = train_test_split(x, y_encoded, test_size=0.33, random_state=42)
-    clf = tree.DecisionTreeClassifier().fit(x_train, y_train)
-    reduced_data = training.groupby(training['prognosis']).max()
+def load_model():
+    global MODEL_LOADED, clf, le, cols, reduced_data, severity_dict, description_dict, precaution_dict
+    
+    try:
+        print("Loading ML model...")
+        
+        # Load training data
+        training_path = os.path.join(BASE_DIR, 'Data', 'Training.csv')
+        testing_path = os.path.join(BASE_DIR, 'Data', 'Testing.csv')
+        
+        print(f"Training data path: {training_path}")
+        print(f"File exists: {os.path.exists(training_path)}")
+        
+        training = pd.read_csv(training_path)
+        testing = pd.read_csv(testing_path)
+        
+        print(f"Training data shape: {training.shape}")
+        print(f"Columns: {list(training.columns[:5])}...")
+        
+        cols = training.columns[:-1]
+        x = training[cols]
+        y = training['prognosis']
+        
+        print(f"Features: {len(cols)}")
+        print(f"Unique diseases: {len(y.unique())}")
+        
+        # Label encoding
+        le = preprocessing.LabelEncoder()
+        y_encoded = le.fit_transform(y)
+        
+        # Train/test split
+        x_train, x_test, y_train, y_test = train_test_split(x, y_encoded, test_size=0.33, random_state=42)
+        
+        # Train model
+        clf = tree.DecisionTreeClassifier()
+        clf.fit(x_train, y_train)
+        
+        print(f"Model accuracy: {clf.score(x_test, y_test):.2f}")
+        
+        reduced_data = training.groupby(training['prognosis']).max()
+        
+        # Load additional data files
+        load_severity_dict()
+        load_description_dict()
+        load_precaution_dict()
+        
+        MODEL_LOADED = True
+        print("ML model loaded successfully!")
+        
+    except Exception as e:
+        print(f"Error loading ML model: {e}")
+        import traceback
+        traceback.print_exc()
+        MODEL_LOADED = False
 
-    # Initialize dictionaries
-    severity_dict = {}
-    description_dict = {}
-    precaution_dict = {}
+def load_severity_dict():
+    global severity_dict
+    try:
+        severity_file = os.path.join(BASE_DIR, 'Data', 'Symptom_severity.csv')
+        if os.path.exists(severity_file):
+            with open(severity_file) as f:
+                reader = csv.reader(f)
+                next(reader, None)  # Skip header if present
+                for rows in reader:
+                    if len(rows) >= 2:
+                        try:
+                            severity_dict[rows[0]] = int(rows[1])
+                        except ValueError:
+                            severity_dict[rows[0]] = 1
+            print(f"Loaded {len(severity_dict)} severity mappings")
+    except Exception as e:
+        print(f"Error loading severity dict: {e}")
 
-    # Load severity dictionary
-    severity_file = os.path.join(BASE_DIR, 'Data', 'Symptom_severity.csv')
-    if os.path.exists(severity_file):
-        with open(severity_file) as f:
-            reader = csv.reader(f)
-            next(reader, None)  # Skip header if present
-            for rows in reader:
-                if len(rows) >= 2:
-                    try:
-                        severity_dict[rows[0]] = int(rows[1])
-                    except ValueError:
-                        severity_dict[rows[0]] = 1
+def load_description_dict():
+    global description_dict
+    try:
+        description_file = os.path.join(BASE_DIR, 'Data', 'symptom_Description.csv')
+        if os.path.exists(description_file):
+            with open(description_file) as f:
+                reader = csv.reader(f)
+                next(reader, None)  # Skip header if present
+                for rows in reader:
+                    if len(rows) >= 2:
+                        description_dict[rows[0]] = rows[1]
+            print(f"Loaded {len(description_dict)} descriptions")
+    except Exception as e:
+        print(f"Error loading description dict: {e}")
 
-    # Load description dictionary
-    description_file = os.path.join(BASE_DIR, 'Data', 'symptom_Description.csv')
-    if os.path.exists(description_file):
-        with open(description_file) as f:
-            reader = csv.reader(f)
-            next(reader, None)  # Skip header if present
-            for rows in reader:
-                if len(rows) >= 2:
-                    description_dict[rows[0]] = rows[1]
+def load_precaution_dict():
+    global precaution_dict
+    try:
+        precaution_file = os.path.join(BASE_DIR, 'Data', 'symptom_precaution.csv')
+        if os.path.exists(precaution_file):
+            with open(precaution_file) as f:
+                reader = csv.reader(f)
+                next(reader, None)  # Skip header if present
+                for rows in reader:
+                    if len(rows) >= 2:
+                        precautions = [p.strip() for p in rows[1:] if p.strip()]
+                        if precautions:
+                            precaution_dict[rows[0]] = precautions
+            print(f"Loaded {len(precaution_dict)} precaution sets")
+    except Exception as e:
+        print(f"Error loading precaution dict: {e}")
 
-    # Load precaution dictionary
-    precaution_file = os.path.join(BASE_DIR, 'Data', 'symptom_precaution.csv')
-    if os.path.exists(precaution_file):
-        with open(precaution_file) as f:
-            reader = csv.reader(f)
-            next(reader, None)  # Skip header if present
-            for rows in reader:
-                if len(rows) >= 2:
-                    precautions = [p for p in rows[1:] if p.strip()]
-                    if precautions:
-                        precaution_dict[rows[0]] = precautions
-
-    MODEL_LOADED = True
-
-except Exception as e:
-    print(f"Error loading model data: {e}")
-    MODEL_LOADED = False
-    cols = []
-    clf = None
-    le = None
-    reduced_data = None
-    severity_dict = {}
-    description_dict = {}
-    precaution_dict = {}
+def map_symptoms_to_columns(symptoms):
+    """Map user symptoms to dataset column names"""
+    mapped_columns = []
+    user_text = ' '.join(symptoms).lower()
+    
+    # First try exact mappings
+    for user_symptom in symptoms:
+        user_symptom_lower = user_symptom.lower().strip()
+        if user_symptom_lower in SYMPTOM_MAPPINGS:
+            mapped_columns.extend(SYMPTOM_MAPPINGS[user_symptom_lower])
+    
+    # Then try partial mappings
+    for mapped_symptom, column_names in SYMPTOM_MAPPINGS.items():
+        if mapped_symptom in user_text and mapped_symptom not in [s.lower() for s in symptoms]:
+            mapped_columns.extend(column_names)
+    
+    # Finally try direct column matches
+    for symptom in symptoms:
+        clean_symptom = symptom.lower().replace(' ', '_')
+        if clean_symptom in cols:
+            mapped_columns.append(clean_symptom)
+    
+    return list(set(mapped_columns))  # Remove duplicates
 
 def predict_disease(symptom_list, days=1):
+    global MODEL_LOADED, clf, le, cols, reduced_data, severity_dict, description_dict, precaution_dict
+    
+    # Load model if not already loaded
     if not MODEL_LOADED:
-        return "❌ The AI model is currently unavailable. Please try again later or consult a healthcare professional."
+        load_model()
+    
+    if not MODEL_LOADED:
+        return "❌ The AI model failed to load. Please check the data files and try again."
     
     if not symptom_list:
         return "⚠️ Please provide some symptoms to analyze."
     
     try:
-        # Clean and process symptoms
-        cleaned_symptoms = []
-        for symptom in symptom_list:
-            if isinstance(symptom, str):
-                cleaned = symptom.strip().lower().replace(' ', '_')
-                if cleaned:
-                    cleaned_symptoms.append(cleaned)
+        print(f"Analyzing symptoms: {symptom_list}")
         
-        if not cleaned_symptoms:
-            return "⚠️ No valid symptoms provided. Please describe your symptoms clearly."
+        # Map symptoms to dataset columns
+        mapped_columns = map_symptoms_to_columns(symptom_list)
+        
+        print(f"Mapped columns: {mapped_columns}")
+        
+        if not mapped_columns:
+            # Try fuzzy matching as fallback
+            matched_symptoms = []
+            for symptom in symptom_list:
+                clean_symptom = symptom.lower().replace(' ', '_')
+                for col in cols:
+                    if clean_symptom in col.lower() or any(word in col.lower() for word in clean_symptom.split('_')):
+                        matched_symptoms.append(col)
+                        break
+            
+            if not matched_symptoms:
+                common_symptoms = ['fever', 'headache', 'cough', 'fatigue', 'nausea', 'stomach pain', 'chest pain', 'back pain', 'joint pain', 'diarrhea']
+                return f"⚠️ Could not match your symptoms to our database.\n\nYou mentioned: {', '.join(symptom_list)}\n\nTry using common terms like: {', '.join(common_symptoms)}"
+            
+            mapped_columns = matched_symptoms
         
         # Create input vector
         input_vector = np.zeros(len(cols))
-        matched_symptoms = []
+        final_matched_symptoms = []
         
-        for symptom in cleaned_symptoms:
-            for i, feature in enumerate(cols):
-                if re.search(symptom, feature.lower(), re.IGNORECASE):
-                    input_vector[i] = 1
-                    matched_symptoms.append(feature)
-                    break
+        for symptom_col in mapped_columns:
+            if symptom_col in cols:
+                idx = list(cols).index(symptom_col)
+                input_vector[idx] = 1
+                final_matched_symptoms.append(symptom_col)
         
-        if not matched_symptoms:
-            # Fallback: try partial matching
-            for symptom in cleaned_symptoms:
-                for i, feature in enumerate(cols):
-                    if symptom in feature.lower() or feature.lower() in symptom:
-                        input_vector[i] = 1
-                        matched_symptoms.append(feature)
-                        break
+        print(f"Final matched symptoms: {final_matched_symptoms}")
         
-        if not matched_symptoms:
-            return f"⚠️ Could not match your symptoms to our database. You mentioned: {', '.join(symptom_list)}. Please try using more common medical terms like 'fever', 'headache', 'cough', etc."
+        if not final_matched_symptoms:
+            return "⚠️ No symptoms could be matched to our medical database. Please try using different medical terminology."
         
         # Make prediction
         input_df = pd.DataFrame([input_vector], columns=cols)
         prediction = clf.predict(input_df)[0]
         predicted_disease = le.inverse_transform([prediction])[0]
         
+        print(f"Predicted disease: {predicted_disease}")
+        
         # Build response
-        response = f"🩺 **Based on your symptoms, this could be:** {predicted_disease}\n\n"
+        response = f"🩺 **Medical Analysis Results**\n\n"
+        response += f"**Possible Condition:** {predicted_disease}\n\n"
+        response += f"**Symptoms Analyzed:** {', '.join([s.replace('_', ' ').title() for s in final_matched_symptoms])}\n\n"
         
         # Add description
         if predicted_disease in description_dict:
-            response += f"📋 **About this condition:** {description_dict[predicted_disease]}\n\n"
+            response += f"**About this condition:** {description_dict[predicted_disease]}\n\n"
         
         # Add precautions
         if predicted_disease in precaution_dict:
-            response += "✅ **Recommended actions:**\n"
+            response += "**Recommended Actions:**\n"
             for i, precaution in enumerate(precaution_dict[predicted_disease], 1):
                 if precaution.strip():
-                    response += f"{i}. {precaution}\n"
+                    response += f"{i}. {precaution.strip()}\n"
             response += "\n"
         
         # Calculate severity
-        severity_score = sum(severity_dict.get(sym.replace('_', ' '), 1) for sym in matched_symptoms)
-        risk_level = (severity_score * max(days, 1)) / (len(matched_symptoms) + 1)
+        severity_score = sum(severity_dict.get(sym.replace('_', ' '), 1) for sym in final_matched_symptoms)
+        risk_level = (severity_score * max(days, 1)) / (len(final_matched_symptoms) + 1)
         
         if risk_level > 10:
-            response += "🚨 **IMPORTANT:** Based on symptom severity and duration, please consult a healthcare professional immediately."
+            response += "🚨 **URGENT:** Based on symptom severity and duration, please seek immediate medical attention."
         elif risk_level > 5:
-            response += "⚠️ **Recommendation:** Consider consulting a healthcare professional if symptoms persist or worsen."
+            response += "⚠️ **RECOMMENDATION:** Consider consulting a healthcare professional if symptoms persist or worsen."
         else:
-            response += "ℹ️ **General advice:** Monitor your symptoms and follow basic care. Consult a doctor if symptoms worsen."
+            response += "ℹ️ **ADVICE:** Monitor your symptoms and follow the recommended actions. Seek medical care if symptoms worsen."
         
-        response += "\n\n⚕️ **Disclaimer:** This is AI-generated information for educational purposes only. Always consult healthcare professionals for medical advice."
+        response += "\n\n⚕️ **Medical Disclaimer:** This AI analysis is for informational purposes only and should not replace professional medical diagnosis or treatment. Always consult qualified healthcare professionals for medical concerns."
         
+        print("Response generated successfully")
         return response
         
     except Exception as e:
-        return f"❌ An error occurred while analyzing your symptoms: {str(e)}. Please try again or consult a healthcare professional."
+        print(f"Error in predict_disease: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"❌ An error occurred during medical analysis: {str(e)}. Please try again or consult a healthcare professional immediately."
 
-# Fallback function if model fails
-def simple_symptom_advice(symptoms):
-    common_advice = {
-        'fever': 'Rest, stay hydrated, and monitor temperature. Consult a doctor if fever persists or exceeds 101.3°F (38.5°C).',
-        'headache': 'Try rest, hydration, and over-the-counter pain relievers. See a doctor for severe or persistent headaches.',
-        'cough': 'Stay hydrated, use a humidifier, and avoid irritants. Consult a doctor if cough persists or produces blood.',
-        'fatigue': 'Ensure adequate sleep, maintain good nutrition, and manage stress. See a doctor if fatigue is severe or persistent.',
-        'nausea': 'Try small, frequent meals and stay hydrated. Consult a doctor if accompanied by severe symptoms.',
-    }
-    
-    advice_given = []
-    for symptom in symptoms:
-        symptom_lower = symptom.lower()
-        for key, advice in common_advice.items():
-            if key in symptom_lower:
-                advice_given.append(f"For {key}: {advice}")
-                break
-    
-    if advice_given:
-        return "Based on your symptoms:\n\n" + "\n\n".join(advice_given) + "\n\n⚕️ Always consult healthcare professionals for proper medical advice."
-    else:
-        return "⚠️ Please consult a healthcare professional for proper evaluation of your symptoms."
+# Initialize on import
+load_model()
 
 if __name__ == "__main__":
-    if MODEL_LOADED:
-        print("Model loaded successfully!")
-        print("Train/Test Split Accuracy:", clf.score(x_test, y_test) if 'x_test' in globals() else "N/A")
-        
-        # Test prediction
-        test_symptoms = ['fever', 'headache']
-        result = predict_disease(test_symptoms)
-        print("\nTest prediction:")
-        print(result)
-    else:
-        print("Model failed to load.")
+    print("Testing enhanced chatbot engine...")
+    
+    test_cases = [
+        ["fever", "headache"],
+        ["cough", "chest pain"],
+        ["stomach pain", "nausea"],
+        ["fatigue", "joint pain"],
+        ["itching", "skin rash"],
+        ["diarrhea", "dehydration"]
+    ]
+    
+    for symptoms in test_cases:
+        print(f"\nTesting: {symptoms}")
+        result = predict_disease(symptoms)
+        print(f"Result: {result[:300]}...")
+        print("-" * 50)
