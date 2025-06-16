@@ -9,103 +9,187 @@ from sklearn.model_selection import train_test_split
 # Define absolute paths to data
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-training = pd.read_csv(os.path.join(BASE_DIR, 'Data', 'Training.csv'))
-testing = pd.read_csv(os.path.join(BASE_DIR, 'Data', 'Testing.csv'))
-cols = training.columns[:-1]
-x = training[cols]
-y = training['prognosis']
+try:
+    training = pd.read_csv(os.path.join(BASE_DIR, 'Data', 'Training.csv'))
+    testing = pd.read_csv(os.path.join(BASE_DIR, 'Data', 'Testing.csv'))
+    cols = training.columns[:-1]
+    x = training[cols]
+    y = training['prognosis']
 
-# Label encoding
-le = preprocessing.LabelEncoder()
-y_encoded = le.fit_transform(y)
+    # Label encoding
+    le = preprocessing.LabelEncoder()
+    y_encoded = le.fit_transform(y)
 
-# Train/test split
-x_train, x_test, y_train, y_test = train_test_split(x, y_encoded, test_size=0.33, random_state=42)
-clf = tree.DecisionTreeClassifier().fit(x_train, y_train)
-reduced_data = training.groupby(training['prognosis']).max()
+    # Train/test split
+    x_train, x_test, y_train, y_test = train_test_split(x, y_encoded, test_size=0.33, random_state=42)
+    clf = tree.DecisionTreeClassifier().fit(x_train, y_train)
+    reduced_data = training.groupby(training['prognosis']).max()
 
-# Load dictionaries
-severity_dict = {}
-description_dict = {}
-precaution_dict = {}
+    # Initialize dictionaries
+    severity_dict = {}
+    description_dict = {}
+    precaution_dict = {}
 
-def load_dictionaries():
-    global severity_dict, description_dict, precaution_dict
+    # Load severity dictionary
+    severity_file = os.path.join(BASE_DIR, 'Data', 'Symptom_severity.csv')
+    if os.path.exists(severity_file):
+        with open(severity_file) as f:
+            reader = csv.reader(f)
+            next(reader, None)  # Skip header if present
+            for rows in reader:
+                if len(rows) >= 2:
+                    try:
+                        severity_dict[rows[0]] = int(rows[1])
+                    except ValueError:
+                        severity_dict[rows[0]] = 1
 
-    with open(os.path.join(BASE_DIR, 'MasterData', 'symptom_severity.csv')) as f:
-        reader = csv.reader(f)
-        severity_dict = {rows[0]: int(rows[1]) for rows in reader if len(rows) >= 2}
+    # Load description dictionary
+    description_file = os.path.join(BASE_DIR, 'Data', 'symptom_Description.csv')
+    if os.path.exists(description_file):
+        with open(description_file) as f:
+            reader = csv.reader(f)
+            next(reader, None)  # Skip header if present
+            for rows in reader:
+                if len(rows) >= 2:
+                    description_dict[rows[0]] = rows[1]
 
-    with open(os.path.join(BASE_DIR, 'MasterData', 'symptom_Description.csv')) as f:
-        reader = csv.reader(f)
-        description_dict = {rows[0]: rows[1] for rows in reader if len(rows) >= 2}
+    # Load precaution dictionary
+    precaution_file = os.path.join(BASE_DIR, 'Data', 'symptom_precaution.csv')
+    if os.path.exists(precaution_file):
+        with open(precaution_file) as f:
+            reader = csv.reader(f)
+            next(reader, None)  # Skip header if present
+            for rows in reader:
+                if len(rows) >= 2:
+                    precautions = [p for p in rows[1:] if p.strip()]
+                    if precautions:
+                        precaution_dict[rows[0]] = precautions
 
-    with open(os.path.join(BASE_DIR, 'MasterData', 'symptom_precaution.csv')) as f:
-        reader = csv.reader(f)
-        precaution_dict = {rows[0]: rows[1:] for rows in reader if len(rows) >= 5}
+    MODEL_LOADED = True
 
-load_dictionaries()
+except Exception as e:
+    print(f"Error loading model data: {e}")
+    MODEL_LOADED = False
+    cols = []
+    clf = None
+    le = None
+    reduced_data = None
+    severity_dict = {}
+    description_dict = {}
+    precaution_dict = {}
 
-# Core function
-def predict_disease(symptom_list: list[str], days: int = 1) -> str:
-    symptom_list = [s.replace(' ', '_') for s in symptom_list]
-    input_vector = np.zeros(len(cols))
-    matched_symptoms = []
-
-    for symptom in symptom_list:
-        matched = False
-        for feature in cols:
-            if re.search(symptom, feature, re.IGNORECASE):
-                idx = list(cols).index(feature)
-                input_vector[idx] = 1
-                matched_symptoms.append(feature)
-                matched = True
-                break
-
-    if not matched_symptoms:
-        return "⚠️ None of your symptoms matched known entries. Please try again with common medical terms."
-
+def predict_disease(symptom_list, days=1):
+    if not MODEL_LOADED:
+        return "❌ The AI model is currently unavailable. Please try again later or consult a healthcare professional."
+    
+    if not symptom_list:
+        return "⚠️ Please provide some symptoms to analyze."
+    
     try:
+        # Clean and process symptoms
+        cleaned_symptoms = []
+        for symptom in symptom_list:
+            if isinstance(symptom, str):
+                cleaned = symptom.strip().lower().replace(' ', '_')
+                if cleaned:
+                    cleaned_symptoms.append(cleaned)
+        
+        if not cleaned_symptoms:
+            return "⚠️ No valid symptoms provided. Please describe your symptoms clearly."
+        
+        # Create input vector
+        input_vector = np.zeros(len(cols))
+        matched_symptoms = []
+        
+        for symptom in cleaned_symptoms:
+            for i, feature in enumerate(cols):
+                if re.search(symptom, feature.lower(), re.IGNORECASE):
+                    input_vector[i] = 1
+                    matched_symptoms.append(feature)
+                    break
+        
+        if not matched_symptoms:
+            # Fallback: try partial matching
+            for symptom in cleaned_symptoms:
+                for i, feature in enumerate(cols):
+                    if symptom in feature.lower() or feature.lower() in symptom:
+                        input_vector[i] = 1
+                        matched_symptoms.append(feature)
+                        break
+        
+        if not matched_symptoms:
+            return f"⚠️ Could not match your symptoms to our database. You mentioned: {', '.join(symptom_list)}. Please try using more common medical terms like 'fever', 'headache', 'cough', etc."
+        
+        # Make prediction
         input_df = pd.DataFrame([input_vector], columns=cols)
         prediction = clf.predict(input_df)[0]
-    except Exception as e:
-        return f"❌ Prediction failed: {e}"
-
-    predicted_disease = le.inverse_transform([prediction])[0]
-
-    try:
-        row = reduced_data.loc[predicted_disease]
-        if isinstance(row, pd.Series):
-            symptom_vector = row.to_numpy()
+        predicted_disease = le.inverse_transform([prediction])[0]
+        
+        # Build response
+        response = f"🩺 **Based on your symptoms, this could be:** {predicted_disease}\n\n"
+        
+        # Add description
+        if predicted_disease in description_dict:
+            response += f"📋 **About this condition:** {description_dict[predicted_disease]}\n\n"
+        
+        # Add precautions
+        if predicted_disease in precaution_dict:
+            response += "✅ **Recommended actions:**\n"
+            for i, precaution in enumerate(precaution_dict[predicted_disease], 1):
+                if precaution.strip():
+                    response += f"{i}. {precaution}\n"
+            response += "\n"
+        
+        # Calculate severity
+        severity_score = sum(severity_dict.get(sym.replace('_', ' '), 1) for sym in matched_symptoms)
+        risk_level = (severity_score * max(days, 1)) / (len(matched_symptoms) + 1)
+        
+        if risk_level > 10:
+            response += "🚨 **IMPORTANT:** Based on symptom severity and duration, please consult a healthcare professional immediately."
+        elif risk_level > 5:
+            response += "⚠️ **Recommendation:** Consider consulting a healthcare professional if symptoms persist or worsen."
         else:
-            symptom_vector = row.to_numpy()[0]
-        symptom_vector = np.atleast_1d(symptom_vector)
-        indices = np.nonzero(symptom_vector)[0]
-        symptoms_given = cols[indices]
+            response += "ℹ️ **General advice:** Monitor your symptoms and follow basic care. Consult a doctor if symptoms worsen."
+        
+        response += "\n\n⚕️ **Disclaimer:** This is AI-generated information for educational purposes only. Always consult healthcare professionals for medical advice."
+        
+        return response
+        
     except Exception as e:
-        return f"❌ Failed to extract symptoms for {predicted_disease}. Error: {e}"
+        return f"❌ An error occurred while analyzing your symptoms: {str(e)}. Please try again or consult a healthcare professional."
 
-    experienced = [sym for sym in symptoms_given if sym in matched_symptoms]
-
-    response = f"🩺 **Diagnosis:** {predicted_disease}\n\n"
-    response += f"🧾 **Description:** {description_dict.get(predicted_disease, 'No description available.')}\n\n"
-    response += f"✅ **Recommended Precautions:**\n"
-    for i, item in enumerate(precaution_dict.get(predicted_disease, []), 1):
-        response += f"{i}. {item}\n"
-
-    severity_score = sum(severity_dict.get(sym, 0) for sym in matched_symptoms)
-    risk = (severity_score * days) / (len(matched_symptoms) + 1)
-    response += "\n"
-    if risk > 13:
-        response += "⚠️ Based on symptom severity and duration, consult a doctor immediately."
+# Fallback function if model fails
+def simple_symptom_advice(symptoms):
+    common_advice = {
+        'fever': 'Rest, stay hydrated, and monitor temperature. Consult a doctor if fever persists or exceeds 101.3°F (38.5°C).',
+        'headache': 'Try rest, hydration, and over-the-counter pain relievers. See a doctor for severe or persistent headaches.',
+        'cough': 'Stay hydrated, use a humidifier, and avoid irritants. Consult a doctor if cough persists or produces blood.',
+        'fatigue': 'Ensure adequate sleep, maintain good nutrition, and manage stress. See a doctor if fatigue is severe or persistent.',
+        'nausea': 'Try small, frequent meals and stay hydrated. Consult a doctor if accompanied by severe symptoms.',
+    }
+    
+    advice_given = []
+    for symptom in symptoms:
+        symptom_lower = symptom.lower()
+        for key, advice in common_advice.items():
+            if key in symptom_lower:
+                advice_given.append(f"For {key}: {advice}")
+                break
+    
+    if advice_given:
+        return "Based on your symptoms:\n\n" + "\n\n".join(advice_given) + "\n\n⚕️ Always consult healthcare professionals for proper medical advice."
     else:
-        response += "ℹ️ Risk is manageable. Monitor symptoms and follow precautions."
+        return "⚠️ Please consult a healthcare professional for proper evaluation of your symptoms."
 
-    return response
 if __name__ == "__main__":
-    print("Evaluating model...")
-    print("Train/Test Split Accuracy:", clf.score(x_test, y_test))
-
-    from sklearn.model_selection import cross_val_score
-    scores = cross_val_score(clf, x, y_encoded, cv=5)
-    print("5-Fold Cross-Validation Accuracy:", scores.mean())
+    if MODEL_LOADED:
+        print("Model loaded successfully!")
+        print("Train/Test Split Accuracy:", clf.score(x_test, y_test) if 'x_test' in globals() else "N/A")
+        
+        # Test prediction
+        test_symptoms = ['fever', 'headache']
+        result = predict_disease(test_symptoms)
+        print("\nTest prediction:")
+        print(result)
+    else:
+        print("Model failed to load.")
